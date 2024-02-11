@@ -83,11 +83,11 @@ struct block {
 
 
 // points to the first block in memory
-struct block *__b_start;
+static struct block *__b_start;
 // points to the end of last block in memory
-struct block *__b_end;
+static struct block *__b_end;
 // points to the next block to consider for allocation
-struct block *__b_next;
+static struct block *__b_next;
 
 
 
