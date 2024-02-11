@@ -115,6 +115,27 @@ static struct block *grow(size_t required)
     size_t current_size;
     struct block *block;
 
+    // if there is just one free block,
+    // just grow that
+    if (NEXT(start) == end && !start->used)
+    {
+        size_t size = start->size;
+        while (size < required)
+        {
+            size *= 2;
+        }
+
+        if (sbrk(size - start->size) == (void *) -1)
+        {
+            return BNULL;
+        }
+
+        start->size = size;
+        end = NEXT(start);
+
+        return start;
+    }
+
     // keep growing until last block is big enough
     do {
         current_size = BYTEDIFF(start, end);
