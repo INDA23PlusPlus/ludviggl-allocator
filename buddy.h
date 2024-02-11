@@ -112,11 +112,12 @@ static void init(void)
 static struct block *grow(size_t required)
 {
     required = BLOCKSIZE(required);
-    size_t current_size = BYTEDIFF(start, end);
+    size_t current_size;
     struct block *block;
 
     // keep growing until last block is big enough
     do {
+        current_size = BYTEDIFF(start, end);
 
         if (sbrk(current_size) == (void *) -1)
         {
@@ -127,10 +128,8 @@ static struct block *grow(size_t required)
         block->size = current_size;
         block->used = 0;
 
-        end = (struct block *)
-            ((byte_t *) block + current_size);
+        end = NEXT(block);
 
-        current_size = BYTEDIFF(start, end);
     } while (current_size < required);
 
     return block;
