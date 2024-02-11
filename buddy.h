@@ -83,36 +83,36 @@ struct block {
 
 
 // points to the first block in memory
-static struct block *__b_start;
+static struct block *start;
 // points to the end of last block in memory
-static struct block *__b_end;
+static struct block *end;
 // points to the next block to consider for allocation
-static struct block *__b_next;
+static struct block *next;
 
 
 
 __attribute__((constructor))
-static void __b_init(void)
+static void init(void)
 {
     // setup an inital block of size BUDDY_BLOCK_INIT_SIZE
 
-    __b_start = sbrk(0);
+    start = sbrk(0);
     if (sbrk(BUDDY_BLOCK_INIT_SIZE) == (void *) -1)
     {
         assert(0 && "failed to initialize buddy.h");
     }
-    __b_end = (struct block *)
-        ((byte_t *) __b_start + BUDDY_BLOCK_INIT_SIZE);
+    end = (struct block *)
+        ((byte_t *) start + BUDDY_BLOCK_INIT_SIZE);
 
-    __b_next = __b_start;
-    __b_next->size = BUDDY_BLOCK_INIT_SIZE;
-    __b_next->used = 0;
+    next = start;
+    next->size = BUDDY_BLOCK_INIT_SIZE;
+    next->used = 0;
 }
 
-static struct block *__b_grow(size_t required)
+static struct block *grow(size_t required)
 {
     required = BLOCKSIZE(required);
-    size_t current_size = BYTEDIFF(__b_start, __b_end);
+    size_t current_size = BYTEDIFF(start, end);
     struct block *block;
 
     // keep growing until last block is big enough
@@ -123,20 +123,20 @@ static struct block *__b_grow(size_t required)
             return BNULL;
         }
 
-        block = __b_end;
+        block = end;
         block->size = current_size;
         block->used = 0;
 
-        __b_end = (struct block *)
+        end = (struct block *)
             ((byte_t *) block + current_size);
 
-        current_size = BYTEDIFF(__b_start, __b_end);
+        current_size = BYTEDIFF(start, end);
     } while (current_size < required);
 
     return block;
 }
 
-static void __b_split(struct block *block)
+static void split(struct block *block)
 {
     block->size /= 2;
     struct block *next = NEXT(block);
@@ -144,13 +144,13 @@ static void __b_split(struct block *block)
     next->used = 0;
 }
 
-static struct block *__b_join(struct block *block)
+static struct block *join(struct block *block)
 {
     struct block *buddy, *new_block;
 
     // find buddy
     size_t offset = (size_t)
-        ((byte_t *) block - (byte_t *)__b_start);
+        ((byte_t *) block - (byte_t *)start);
     if (offset % (block->size * 2) == 0)
     {
         buddy = NEXT(block);
@@ -163,7 +163,7 @@ static struct block *__b_join(struct block *block)
     }
 
     // can we join?
-    if (buddy == __b_end ||
+    if (buddy == end ||
         buddy->size != block->size ||
         buddy->used)
     {
@@ -178,7 +178,7 @@ static struct block *__b_join(struct block *block)
 
 void *balloc(size_t size)
 {
-    struct block *block = __b_next;
+    struct block *block = next;
 
     // search for unused block that fits allocation
     while (MEMSIZE(block) < size || block->used)
@@ -187,16 +187,16 @@ void *balloc(size_t size)
         block = NEXT(block);
 
         // wrap around
-        if (block == __b_end)
+        if (block == end)
         {
-            block = __b_start;
+            block = start;
         }
 
         // went through all available blocks
         // try to grow
-        if (block == __b_next)
+        if (block == next)
         {
-            block = __b_grow(size);
+            block = grow(size);
             if (block == BNULL)
             {
                 // can't grow
@@ -209,14 +209,14 @@ void *balloc(size_t size)
     // split until we have best fit
     while (HALFMEMSIZE(block) >= size && block->size > MINBLOCKSIZE)
     {
-        __b_split(block);
+        split(block);
     }
 
     // record where we should start searching next
-    __b_next = NEXT(block);
-    if (__b_next == __b_end)
+    next = NEXT(block);
+    if (next == end)
     {
-        __b_next = __b_start;
+        next = start;
     }
 
     block->used = 1;
@@ -229,17 +229,17 @@ void bfree(void *ptr)
     block->used = 0;
 
     // join unused buddies
-    while ((block = __b_join(block)) != BNULL)
+    while ((block = join(block)) != BNULL)
     {
         //  // make sure __n_next doesn't point to
         //  // a block removed during joining
-        //  if (BYTEDIFF(block, __b_next) < block->size)
+        //  if (BYTEDIFF(block, next) < block->size)
         //  {
-        //      __b_next = block;
+        //      next = block;
         //  }
 
         // this block is definitely unused
-        __b_next = block;
+        next = block;
     }
 }
 
