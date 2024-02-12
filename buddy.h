@@ -57,6 +57,9 @@ struct block {
 #define BUDDY_BLOCK_INIT_SIZE 4096
 #endif
 
+_Static_assert((BUDDY_BLOCK_INIT_SIZE & (BUDDY_BLOCK_INIT_SIZE - 1)) == 0,
+               "buddy.h: BUDDY_BLOCK_INIT_SIZE must be a power of two.");
+
 
 
 // find next block
