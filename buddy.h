@@ -265,7 +265,7 @@ void bfree(void *ptr)
 
 void *brealloc(void *ptr, size_t size)
 {
-    struct block *block, *next;
+    struct block *block, *buddy;
     size_t block_size;
     byte_t *new_ptr;
 
@@ -277,36 +277,43 @@ void *brealloc(void *ptr, size_t size)
 
     block = BLOCK(ptr);
 
-    // no need to realloc
     if (MEMSIZE(block) >= size)
     {
-        return ptr;
+        while ((block->size / 2 - MEMOFFSET) >= size)
+        {
+            split(block);
+        }
+        next = NEXT(block);
+        return block->mem;
     }
 
     block_size = block->size;
 
     // try to grow current block by joining
-    // with only left buddies
+    // with only right buddies
     for (;;)
     {
         if (block_size >= BLOCKSIZE(size))
         {
             block->size = block_size;
+            next = NEXT(block);
             return block->mem;
         }
 
-        next = (struct block *) ((byte_t *) block + block_size);
+        buddy = (struct block *) ((byte_t *) block + block_size);
 
         if (BYTEDIFF(start, block) % (block_size * 2) > 0 ||
-            next == end ||
-            next->size != block_size ||
-            next->used)
+            buddy == end ||
+            buddy->size != block_size ||
+            buddy->used)
         {
             break;
         }
 
         block_size *= 2;
     }
+
+    bfree(ptr);
 
     new_ptr = balloc(size);
     if (new_ptr == BNULL) return BNULL;
@@ -326,7 +333,6 @@ void *brealloc(void *ptr, size_t size)
         }
     }
 
-    bfree(ptr);
     return new_ptr;
 }
 
