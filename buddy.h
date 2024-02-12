@@ -169,34 +169,38 @@ static void split(struct block *block)
 
 static struct block *join(struct block *block)
 {
-    struct block *buddy, *new_block;
+    struct block *buddy, *joined;
+    size_t size = block->size;
 
-    // find buddy
-    size_t offset = (size_t)
-        ((byte_t *) block - (byte_t *)start);
-    if (offset % (block->size * 2) == 0)
+    for (;;)
     {
-        buddy = NEXT(block);
-        new_block = block;
-    }
-    else
-    {
-        buddy = (struct block *) ((byte_t *) block - block->size);
-        new_block = buddy;
+        if (BYTEDIFF(start, block) % (size * 2) == 0)
+        {
+            buddy = (struct block *) ((byte_t *) block + size);
+            joined = block;
+        }
+        else
+        {
+            buddy = (struct block *) ((byte_t *) block - size);
+            joined = buddy;
+        }
+
+        if (buddy == end ||
+            buddy->size != size ||
+            buddy->used)
+        {
+            break;
+        }
+        else
+        {
+            block = joined;
+            size *= 2;
+        }
     }
 
-    // can we join?
-    if (buddy == end ||
-        buddy->size != block->size ||
-        buddy->used)
-    {
-        return BNULL;
-    }
-
-    new_block->size *= 2;
-    new_block->used = 0;
-
-    return new_block;
+    block->size = size;
+    block->used = 0;
+    return block;
 }
 
 void *balloc(size_t size)
@@ -249,7 +253,9 @@ void *balloc(size_t size)
 void bfree(void *ptr)
 {
     struct block *block = BLOCK(ptr);
-    block->used = 0;
+    block = join(block);
+    next = block;
+}
 
     // join unused buddies
     while ((block = join(block)) != BNULL)
