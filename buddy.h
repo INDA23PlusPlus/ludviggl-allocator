@@ -34,6 +34,12 @@ void *balloc(size_t size);
  */
 void bfree(void *ptr);
 
+/**
+ *  Attempt to reallocate memory to fit new size.
+ *  Returns BNULL on failure.
+ */
+void *brealloc(void *ptr, size_t size);
+
 #endif
 
 
@@ -257,19 +263,71 @@ void bfree(void *ptr)
     next = block;
 }
 
-    // join unused buddies
-    while ((block = join(block)) != BNULL)
-    {
-        //  // make sure __n_next doesn't point to
-        //  // a block removed during joining
-        //  if (BYTEDIFF(block, next) < block->size)
-        //  {
-        //      next = block;
-        //  }
+void *brealloc(void *ptr, size_t size)
+{
+    struct block *block, *next;
+    size_t block_size;
+    byte_t *new_ptr;
 
-        // this block is definitely unused
-        next = block;
+    if (size == 0)
+    {
+        bfree(ptr);
+        return BNULL;
     }
+
+    block = BLOCK(ptr);
+
+    // no need to realloc
+    if (MEMSIZE(block) >= size)
+    {
+        return ptr;
+    }
+
+    block_size = block->size;
+
+    // try to grow current block by joining
+    // with only left buddies
+    for (;;)
+    {
+        if (block_size >= BLOCKSIZE(size))
+        {
+            block->size = block_size;
+            return block->mem;
+        }
+
+        next = (struct block *) ((byte_t *) block + block_size);
+
+        if (BYTEDIFF(start, block) % (block_size * 2) > 0 ||
+            next == end ||
+            next->size != block_size ||
+            next->used)
+        {
+            break;
+        }
+
+        block_size *= 2;
+    }
+
+    new_ptr = balloc(size);
+    if (new_ptr == BNULL) return BNULL;
+
+    if (new_ptr < (byte_t *)ptr)
+    {
+        for (size_t i = 0; i < MEMSIZE(block); i++)
+        {
+            new_ptr[i] = ((byte_t *)ptr)[i];
+        }
+    }
+    else
+    {
+        for (size_t i = MEMSIZE(block); i > 0; i--)
+        {
+            new_ptr[i - 1] = ((byte_t *)ptr)[i - 1];
+        }
+    }
+
+    bfree(ptr);
+    return new_ptr;
 }
 
 #endif
