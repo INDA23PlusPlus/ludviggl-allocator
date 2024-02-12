@@ -313,10 +313,17 @@ void *brealloc(void *ptr, size_t size)
         block_size *= 2;
     }
 
+    block_size = block->size;
     bfree(ptr);
 
     new_ptr = balloc(size);
-    if (new_ptr == BNULL) return BNULL;
+    if (new_ptr == BNULL)
+    {
+        // restore freed block
+        block->size = block_size;
+        block->used = 1;
+        return BNULL;
+    }
 
     if (new_ptr < (byte_t *)ptr)
     {
