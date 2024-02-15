@@ -339,6 +339,7 @@ void *brealloc(void *ptr, size_t size)
 
     if (ptr == BNULL)
     {
+        pthread_mutex_unlock(&lock);
         return balloc(size);
     }
 
