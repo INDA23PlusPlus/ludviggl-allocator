@@ -147,15 +147,14 @@ static void init(void)
     // setup an inital block of size BUDDY_BLOCK_INIT_SIZE
     start = sbrk(0);
 
+    size_t pagesize = sysconf(_SC_PAGESIZE);
+
     // adjust alignment if necessary
-    const size_t A = _Alignof(max_align_t);
-    if ((size_t) start % A > 0)
+    if ((size_t) start % pagesize > 0)
     {
-        (void) sbrk(A - (size_t) start % A);
+        (void) sbrk(pagesize - (size_t) start % pagesize);
         start = sbrk(0);
     }
-
-    size_t pagesize = sysconf(_SC_PAGESIZE);
 
     if (sbrk(pagesize) == (void *) -1)
     {
