@@ -77,12 +77,12 @@ struct block {
     _Alignas(max_align_t) byte_t mem[];
 };
 
-#ifndef BUDDY_BLOCK_INIT_SIZE
-#define BUDDY_BLOCK_INIT_SIZE 4096
-#endif
-
-_Static_assert((BUDDY_BLOCK_INIT_SIZE & (BUDDY_BLOCK_INIT_SIZE - 1)) == 0,
-               "buddy.h: BUDDY_BLOCK_INIT_SIZE must be a power of two.");
+//#ifndef BUDDY_BLOCK_INIT_SIZE
+//#define BUDDY_BLOCK_INIT_SIZE 4096
+//#endif
+//
+//_Static_assert((BUDDY_BLOCK_INIT_SIZE & (BUDDY_BLOCK_INIT_SIZE - 1)) == 0,
+//               "buddy.h: BUDDY_BLOCK_INIT_SIZE must be a power of two.");
 
 
 
@@ -155,15 +155,17 @@ static void init(void)
         start = sbrk(0);
     }
 
-    if (sbrk(BUDDY_BLOCK_INIT_SIZE) == (void *) -1)
+    size_t pagesize = sysconf(_SC_PAGESIZE);
+
+    if (sbrk(pagesize) == (void *) -1)
     {
         assert(0 && "failed to initialize buddy.h");
     }
     end = (struct block *)
-        ((byte_t *) start + BUDDY_BLOCK_INIT_SIZE);
+        ((byte_t *) start + pagesize);
 
     next = start;
-    next->size = BUDDY_BLOCK_INIT_SIZE;
+    next->size = pagesize;
     next->used = 0;
     Buddy_Is_Init = 1;
     pthread_mutex_unlock(&lock);
