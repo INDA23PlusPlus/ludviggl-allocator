@@ -19,9 +19,19 @@
 #ifndef BUDDY_H
 #define BUDDY_H
 
+#ifdef BUDDY_STDLIB_OVERRIDE
+    #include <stdlib.h>
+    #define BNULL    NULL
+    #define balloc   malloc
+    #define bfree    free
+    #define brealloc realloc
+    #define bcalloc  calloc
+#else
+    #define BNULL ((void *) 0)
+#endif
+
 #include <stddef.h>
 
-#define BNULL ((void *) 0)
 
 /**
  *  Allocate `size` bytes of memory.
@@ -40,6 +50,12 @@ void bfree(void *ptr);
  */
 void *brealloc(void *ptr, size_t size);
 
+/**
+ *  Allocate memory for `nitems` objects of size `size`,
+ *  and zero memory. Returns BNULL on failure.
+ */
+void *bcalloc(size_t nitems, size_t size);
+
 #endif
 
 
@@ -50,6 +66,8 @@ void *brealloc(void *ptr, size_t size);
 #include <stdint.h>
 #include <unistd.h>
 #include <assert.h>
+#include <string.h>
+#include <pthread.h>
 
 typedef uint8_t byte_t;
 
@@ -90,22 +108,44 @@ _Static_assert((BUDDY_BLOCK_INIT_SIZE & (BUDDY_BLOCK_INIT_SIZE - 1)) == 0,
     (size_t) ((byte_t *) ptr2 - (byte_t *) ptr1)
 
 
-
 // points to the first block in memory
 static struct block *start;
 // points to the end of last block in memory
 static struct block *end;
 // points to the next block to consider for allocation
 static struct block *next;
+// lock for the whole allocator
+static pthread_mutex_t lock;
 
 
+#ifdef BUDDY_STDLIB_OVERRIDE
+// we call bfree (=free when this ^^^ is defined)
+// and then use the pointer in some functions
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuse-after-free"
+#endif
 
 __attribute__((constructor))
 static void init(void)
 {
-    // setup an inital block of size BUDDY_BLOCK_INIT_SIZE
+    pthread_mutexattr_t lock_attr;
+    // lock may be aquired multiple times,
+    // for example when brealloc calls balloc
+    pthread_mutexattr_settype(&lock_attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&lock, &lock_attr);
+    pthread_mutex_lock(&lock);
 
+    // setup an inital block of size BUDDY_BLOCK_INIT_SIZE
     start = sbrk(0);
+
+    // adjust alignment if necessary
+    const size_t A = _Alignof(max_align_t);
+    if ((size_t) start % A > 0)
+    {
+        (void) sbrk(A - (size_t) start % A);
+        start = sbrk(0);
+    }
+
     if (sbrk(BUDDY_BLOCK_INIT_SIZE) == (void *) -1)
     {
         assert(0 && "failed to initialize buddy.h");
@@ -116,6 +156,7 @@ static void init(void)
     next = start;
     next->size = BUDDY_BLOCK_INIT_SIZE;
     next->used = 0;
+    pthread_mutex_unlock(&lock);
 }
 
 static struct block *grow(size_t required)
@@ -211,6 +252,8 @@ static struct block *join(struct block *block)
 
 void *balloc(size_t size)
 {
+    pthread_mutex_lock(&lock);
+
     struct block *block = next;
 
     // search for unused block that fits allocation
@@ -233,6 +276,7 @@ void *balloc(size_t size)
             if (block == BNULL)
             {
                 // can't grow
+                pthread_mutex_unlock(&lock);
                 return BNULL;
             }
             break;
@@ -253,25 +297,40 @@ void *balloc(size_t size)
     }
 
     block->used = 1;
+    pthread_mutex_unlock(&lock);
     return block->mem;
 }
 
 void bfree(void *ptr)
 {
+    if (ptr == BNULL)
+    {
+        return;
+    }
+
+    pthread_mutex_lock(&lock);
     struct block *block = BLOCK(ptr);
     block = join(block);
     next = block;
+    pthread_mutex_unlock(&lock);
 }
 
 void *brealloc(void *ptr, size_t size)
 {
+    pthread_mutex_lock(&lock);
     struct block *block, *buddy;
     size_t block_size;
     byte_t *new_ptr;
 
+    if (ptr == BNULL)
+    {
+        return balloc(size);
+    }
+
     if (size == 0)
     {
         bfree(ptr);
+        pthread_mutex_unlock(&lock);
         return BNULL;
     }
 
@@ -284,6 +343,7 @@ void *brealloc(void *ptr, size_t size)
             split(block);
         }
         next = NEXT(block);
+        pthread_mutex_unlock(&lock);
         return block->mem;
     }
 
@@ -297,6 +357,7 @@ void *brealloc(void *ptr, size_t size)
         {
             block->size = block_size;
             next = NEXT(block);
+            pthread_mutex_unlock(&lock);
             return block->mem;
         }
 
@@ -322,6 +383,7 @@ void *brealloc(void *ptr, size_t size)
         // restore freed block
         block->size = block_size;
         block->used = 1;
+        pthread_mutex_unlock(&lock);
         return BNULL;
     }
 
@@ -340,7 +402,24 @@ void *brealloc(void *ptr, size_t size)
         }
     }
 
+    pthread_mutex_unlock(&lock);
     return new_ptr;
 }
+
+void *bcalloc(size_t nitems, size_t size)
+{
+    size *= nitems;
+    char *ptr = balloc(size);
+    if (ptr == BNULL)
+    {
+        return BNULL;
+    }
+    memset(ptr, 0, size);
+    return ptr;
+}
+
+#ifdef BUDDY_STDLIB_OVERRIDE
+#pragma GCC diagnostic pop
+#endif
 
 #endif
