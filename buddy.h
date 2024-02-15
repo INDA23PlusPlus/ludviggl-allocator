@@ -116,7 +116,8 @@ static struct block *end;
 static struct block *next;
 // lock for the whole allocator
 static pthread_mutex_t lock;
-
+// library initialization flag
+static int Buddy_Is_Init = 0;
 
 #ifdef BUDDY_STDLIB_OVERRIDE
 // we call bfree (=free when this ^^^ is defined)
@@ -125,7 +126,10 @@ static pthread_mutex_t lock;
 #pragma GCC diagnostic ignored "-Wuse-after-free"
 #endif
 
-__attribute__((constructor))
+// Buddy_Is_Init is used instead of constructor, because I couldn't
+// get init() to be called before c++ global constructors, which in turn
+// call malloc.
+//__attribute__((constructor(101)))
 static void init(void)
 {
     pthread_mutexattr_t lock_attr;
@@ -134,6 +138,11 @@ static void init(void)
     pthread_mutexattr_settype(&lock_attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&lock, &lock_attr);
     pthread_mutex_lock(&lock);
+
+    if (Buddy_Is_Init)
+    {
+        return;
+    }
 
     // setup an inital block of size BUDDY_BLOCK_INIT_SIZE
     start = sbrk(0);
@@ -156,6 +165,7 @@ static void init(void)
     next = start;
     next->size = BUDDY_BLOCK_INIT_SIZE;
     next->used = 0;
+    Buddy_Is_Init = 1;
     pthread_mutex_unlock(&lock);
 }
 
@@ -252,6 +262,11 @@ static struct block *join(struct block *block)
 
 void *balloc(size_t size)
 {
+    if (!Buddy_Is_Init)
+    {
+        init();
+    }
+
     pthread_mutex_lock(&lock);
 
     struct block *block = next;
