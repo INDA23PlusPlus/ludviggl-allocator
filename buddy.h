@@ -267,6 +267,11 @@ void *balloc(size_t size)
         init();
     }
 
+    if (size == 0)
+    {
+        return BNULL;
+    }
+
     pthread_mutex_lock(&lock);
 
     struct block *block = next;
